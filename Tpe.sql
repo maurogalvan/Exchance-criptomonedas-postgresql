@@ -69,3 +69,4 @@ from g9_usuario u
 
 SELECT *
 FROM g9_pais
+
