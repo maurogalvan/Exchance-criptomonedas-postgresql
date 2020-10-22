@@ -65,10 +65,6 @@ insert into g9_moneda (moneda, nombre, descripcion, alta, estado, fiat) VALUES
 --Ingreso de Moneda Fiat Yen
 insert into g9_moneda (moneda, nombre, descripcion, alta, estado, fiat) VALUES
 ('JPY', 'Yen', 'Yen japones', '20/10/2020', 1,1);
-insert into g9_moneda (moneda, nombre, descripcion, alta, estado, fiat) VALUES
-('GBP', 'Libra esterlina', 'moneda del reino unico', '20/10/2020', 1,1);
-insert into g9_moneda (moneda, nombre, descripcion, alta, estado, fiat) VALUES
-('AUD', 'Dolar Australiano', 'moneda del australia', '20/10/2020', 1,1);
 
 --------------------------MONEDA ESTABLE--------------------------------
 insert into g9_moneda(moneda, nombre, descripcion, alta, estado, fiat) VALUES
@@ -80,7 +76,7 @@ insert into g9_moneda(moneda, nombre, descripcion, alta, estado, fiat) VALUES
                          'basis.', '21/10/2020', 1 , 0);
 
 insert into g9_moneda(moneda, nombre, descripcion, alta, estado, fiat) VALUES
-    ('Dai', 'DAI', 'Dai price today is $1.01 USD with a 24-hour trading volume of $119,134,185 USD.' , '21/10/2020', 1 , 0);
+    ('Dai', 'DAI', 'Dai price today is $1.05 USD with a 24-hour trading volume of $119,134,185 USD.' , '21/10/2020', 1 , 0);
 
 insert into g9_moneda(moneda, nombre, descripcion, alta, estado, fiat) VALUES
     ('BUSD', 'Binance USD', 'Binance USD price today is $1.00 USD with a 24-hour trading volume of $640,919,409 USD.' ,
@@ -132,8 +128,66 @@ insert into g9_moneda (moneda, nombre, descripcion, alta, estado, fiat) VALUES
 insert into g9_moneda (moneda, nombre, descripcion, alta, estado, fiat) VALUES
     ('LTC', 'Litecoin', 'Criptomoneda', '12/12/2020', 1, 0);
 
+--------------------------RelMoneda-----------------------------
+select *
+from g9_relmoneda;
+
+insert into g9_relmoneda (moneda, monedaf, fecha, valor) VALUES
+('USDT', 'USD', '21/10/2020', '1');
+
+insert into g9_relmoneda (moneda, monedaf, fecha, valor) VALUES
+('USDC', 'USD', '21/10/2020', '1');
+
+insert into g9_relmoneda (moneda, monedaf, fecha, valor) VALUES
+('DAI', 'USD', '21/10/2020', '1.05');
+
+insert into g9_relmoneda (moneda, monedaf, fecha, valor) VALUES
+('BUSD', 'USD', '21/10/2020', '1');
+
+insert into g9_relmoneda (moneda, monedaf, fecha, valor) VALUES
+('PAX', 'USD', '21/10/2020', '1.7');
+
 ---------------------------MERCADO------------------------------
 
---Crear un mercado de cada moneda contra las estables
+---------mercado de cada moneda contra las estables-----------------
 
+create or replace procedure pr_g9_CargarMercadoMonedaContraEstables()
+as $$
+    declare
+        moneda_1 varchar;
+        moneda_2 varchar;
+        i integer;
+    begin
+        i:=0;
+        for moneda_1 in (select moneda from g9_moneda m where(NOT EXISTS(select 1 from g9_relmoneda r where (m.moneda=r.moneda)))) loop
+                for moneda_2 in (select moneda from g9_moneda m where(EXISTS(select 1 from g9_relmoneda r where (m.moneda=r.moneda)))) loop
+                        insert into g9_mercado(nombre, moneda_o, moneda_d, precio_mercado)  values
+                                                ('Mercado_'||moneda_1||'_'||moneda_2, moneda_1, moneda_2, random()*100+random());
+                        i:=i+1;
+                end loop;
+        end loop;
+    end
+$$ language plpgsql;
 
+call pr_g9_CargarMercadoMonedaContraEstables();
+
+-------------------------------------------------------------------------
+----------------mercado de cada criptomoneda contra el BTC---------------
+
+create or replace procedure pr_g9_CargarMercadoMonedaContraBTC()
+as $$
+    declare
+        moneda_1 varchar;
+        i integer;
+    begin
+        i:=0;
+        for moneda_1 in (select moneda from g9_moneda m where (m.moneda <> 'BTC')) loop
+            insert into g9_mercado(nombre, moneda_o, moneda_d, precio_mercado) values
+                                ('Mercado_'||moneda_1||'_BTC', moneda_1, 'BTC', random()*100+random());
+            i:=i+1;
+        end loop;
+    end
+$$ language plpgsql;
+
+call pr_g9_CargarMercadoMonedaContraBTC();
+----------------------------------------------------------------
