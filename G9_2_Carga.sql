@@ -191,3 +191,101 @@ $$ language plpgsql;
 
 call pr_g9_CargarMercadoMonedaContraBTC();
 ----------------------------------------------------------------
+
+create or replace procedure pr_g9_cargarOrdenes(i integer, tipo varchar) as
+$$
+    declare
+        mercado_1 varchar;
+    begin
+        for mercado_1 in (select m.nombre from g9_mercado m) loop
+            insert into g9_orden(id, mercado, id_usuario, tipo, fecha_creacion, fecha_ejec, valor, cantidad, estado) VALUES
+                                (i,mercado_1,ceiling(random()*10),tipo, current_date,current_date,random()*1000+random(),random()*100,'Cumplda');
+            i:=i+1;
+            end loop;
+    end
+$$ language plpgsql;
+
+call pr_g9_cargarOrdenes(0,'Comprar');
+call pr_g9_cargarOrdenes(94,'Comprar');
+
+select *
+from g9_orden;
+
+--------------------------------------------------------
+
+--PUNTO B)2)
+--DUDA: 1) Es valor o es cantidad? (g9_orden)
+--DUDA: 2) M.MONEDA_ D o M.MONEDA_O?
+
+--Controlar que no se pueda colocar una orden si no hay fondos suficientes.
+
+select *
+from g9_usuario;
+
+select *
+from g9_moneda;
+
+select *
+from g9_billetera;
+
+select *
+from g9_mercado;
+
+select *
+    from g9_orden;
+
+
+insert into g9_billetera(id_usuario, moneda, saldo) VALUES (1,'BTC', 0.4);
+update g9_billetera set saldo=1 where id_usuario=1;
+DELETE from g9_orden where id=188;
+insert into g9_orden(id, mercado, id_usuario, tipo, fecha_creacion, fecha_ejec, valor, cantidad, estado) VALUES
+    (188, 'Mercado_BTC_USDT', 1, 'Compra', current_date, current_date, 0.4, 2, 'Esperando');
+
+CREATE OR REPLACE FUNCTION FN_ORDEN_VALIDA() RETURNS trigger AS $$
+    BEGIN
+        IF EXISTS (SELECT 1
+            from g9_orden o
+            INNER JOIN g9_mercado m on (m.nombre = new.mercado)
+            INNER JOIN g9_billetera b on (new.id_usuario = b.id_usuario) and (b.moneda = m.moneda_o)
+            where (new.valor > b.saldo) or (new.valor<=0)) then
+            RAISE EXCEPTION 'No se puede agregar la orden debido a que no se tiene el saldo suficiente';
+        END IF;
+        update g9_billetera set saldo=saldo-new.valor where id_usuario=new.id_usuario and moneda=moneda;
+
+    RETURN NEW;
+    end;
+$$
+LANGUAGE 'plpgsql';
+
+CREATE TRIGGER TR_ORDEN_VALIDA BEFORE INSERT OR UPDATE OF valor ON g9_orden
+    FOR EACH ROW EXECUTE FUNCTION FN_ORDEN_VALIDA();
+
+
+
+--PUNTO B)3)
+
+select *
+    from g9_movimiento;
+
+delete from g9_movimiento where id_usuario=1;
+
+insert into g9_movimiento(id_usuario, moneda, fecha, tipo, comision, valor, bloque, direccion) VALUES
+            (1, 'BTC', current_date, 1, 0.1, 10, 312, 232);
+
+CREATE OR REPLACE FUNCTION FN_RETIRO_VALIDO() RETURNS trigger AS $$
+    BEGIN
+        IF EXISTS (SELECT 1
+            from g9_movimiento mov
+            INNER JOIN g9_billetera b on (new.id_usuario = b.id_usuario) and (b.moneda = new.moneda)
+            where ((new.valor + new.comision > b.saldo - (SELECT sum(o.valor)
+                                                          from g9_orden o
+                                                          INNER JOIN g9_mercado m on (m.nombre = o.mercado)
+                                                          where m.moneda_o = new.moneda)))) then
+            RAISE EXCEPTION 'No se permite retirar debido a que el saldo esta comprometido con otras transacciones';
+        END IF;
+    RETURN NEW;
+    end $$
+LANGUAGE 'plpgsql';
+
+CREATE TRIGGER TR_RETIRO_VALIDO BEFORE INSERT OR UPDATE OF valor
+    ON g9_movimiento FOR EACH ROW EXECUTE FUNCTION FN_RETIRO_VALIDO();
