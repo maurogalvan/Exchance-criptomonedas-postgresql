@@ -1,4 +1,0 @@
-del punto a queda:
-	Inicializar las órdenes con al menos 100 filas
-del punto b:
-	todo

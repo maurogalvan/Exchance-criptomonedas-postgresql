@@ -1,4 +1,7 @@
 
+--------------- TPE : Carga grupo 9 ------------------
+
+
 ----------------------Extras---------------------------
 --Para que el date tome el aspecto de 'dd/mm/aaaa'
 set datestyle to 'European';
@@ -84,7 +87,7 @@ insert into g9_moneda(moneda, nombre, descripcion, alta, estado, fiat) VALUES
 
 insert into g9_moneda(moneda, nombre, descripcion, alta, estado, fiat) VALUES
     ('PAX', 'Paxos Standard ', 'Paxos Standard price today is $1.00 USD with a 24-hour trading volume of $139,489,741 USD.' ||
-                               ' Paxos Standard is up 0.26% in the last 24 hours.' , '21/10/2020', 1 , 0)
+                               ' Paxos Standard is up 0.26% in the last 24 hours.' , '21/10/2020', 1 , 0);
 
 ------------------------- CRIPTOMONEDAS -----------------------
 insert into g9_moneda (moneda, nombre, descripcion, alta, estado, fiat) VALUES
@@ -192,100 +195,65 @@ $$ language plpgsql;
 call pr_g9_CargarMercadoMonedaContraBTC();
 ----------------------------------------------------------------
 
-create or replace procedure pr_g9_cargarOrdenes(i integer, tipo varchar) as
+--------------------Inicializar las órdenes con al menos 100 filas--------------------
+create or replace procedure pr_g9_cargarBilletera(id_usuario_param int, valor int, moneda_param varchar) as
+$$
+    begin
+        if(EXISTS(select 1 from g9_billetera b where (b.id_usuario=id_usuario_param and b.moneda=moneda_param))) then
+             update g9_billetera b set saldo=saldo+valor where (b.id_usuario=id_usuario_param and b.moneda=moneda_param);
+        else
+            insert into g9_billetera (id_usuario, moneda, saldo) values (id_usuario_param, moneda_param, valor);
+        end if;
+    end;
+$$
+language plpgsql;
+
+Create or replace procedure pr_g9_cargarOrdenes(i integer) as
 $$
     declare
-        mercado_1 varchar;
+        mercado1 varchar;
+        j int;
+        tipoS varchar;
+        moneda varchar;
+        id_usuario int;
+        valor int;
     begin
-        for mercado_1 in (select m.nombre from g9_mercado m) loop
-            insert into g9_orden(id, mercado, id_usuario, tipo, fecha_creacion, fecha_ejec, valor, cantidad, estado) VALUES
-                                (i,mercado_1,ceiling(random()*10),tipo, current_date,current_date,random()*1000+random(),random()*100,'Cumplda');
-            i:=i+1;
+        --50 para venta y 50 para compra por cada mercado
+        for mercado1 in ( select m.nombre from g9_mercado m ) loop
+            j := 0;
+            loop exit when j = 100;
+
+                if (j < 50) then
+                    tipoS = 'Compra';
+                else
+                    tipoS = 'Venta';
+                end if;
+
+                if (tipoS = 'Compra') then
+                    moneda := (select moneda_o from g9_mercado where (nombre = mercado1));
+                end if;
+
+                if (tipoS = 'Venta') then
+                    moneda := (select moneda_d from g9_mercado where (nombre = mercado1));
+                end if;
+
+                --Esto es por que lo necesito para cargar las billeteras
+                id_usuario = ceiling(random()*10);
+                valor = random()*1000+random();
+
+                insert into g9_orden (id, mercado, id_usuario, tipo, fecha_creacion, fecha_ejec, valor, cantidad, estado)
+                        VALUES (i, mercado1, id_usuario , tipoS, current_date, current_date, valor , floor(random()*10), 'Cumplida');
+                --Llamo a cargar las billetas asi me queda consistentes las billeteras con las ordes
+                call pr_g9_cargarBilletera(id_usuario,valor, moneda);
+
+                i := i + 1;
+                j := j + 1;
             end loop;
+
+        end loop;
     end
 $$ language plpgsql;
 
-call pr_g9_cargarOrdenes(0,'Comprar');
-call pr_g9_cargarOrdenes(94,'Comprar');
+call pr_g9_cargarOrdenes(0);
 
-select *
-from g9_orden;
-
---------------------------------------------------------
-
---PUNTO B)2)
---DUDA: 1) Es valor o es cantidad? (g9_orden)
---DUDA: 2) M.MONEDA_ D o M.MONEDA_O?
-
---Controlar que no se pueda colocar una orden si no hay fondos suficientes.
-
-select *
-from g9_usuario;
-
-select *
-from g9_moneda;
-
-select *
-from g9_billetera;
-
-select *
-from g9_mercado;
-
-select *
-    from g9_orden;
-
-
-insert into g9_billetera(id_usuario, moneda, saldo) VALUES (1,'BTC', 0.4);
-update g9_billetera set saldo=1 where id_usuario=1;
-DELETE from g9_orden where id=188;
-insert into g9_orden(id, mercado, id_usuario, tipo, fecha_creacion, fecha_ejec, valor, cantidad, estado) VALUES
-    (188, 'Mercado_BTC_USDT', 1, 'Compra', current_date, current_date, 0.4, 2, 'Esperando');
-
-CREATE OR REPLACE FUNCTION FN_ORDEN_VALIDA() RETURNS trigger AS $$
-    BEGIN
-        IF EXISTS (SELECT 1
-            from g9_orden o
-            INNER JOIN g9_mercado m on (m.nombre = new.mercado)
-            INNER JOIN g9_billetera b on (new.id_usuario = b.id_usuario) and (b.moneda = m.moneda_o)
-            where (new.valor > b.saldo) or (new.valor<=0)) then
-            RAISE EXCEPTION 'No se puede agregar la orden debido a que no se tiene el saldo suficiente';
-        END IF;
-        update g9_billetera set saldo=saldo-new.valor where id_usuario=new.id_usuario and moneda=moneda;
-
-    RETURN NEW;
-    end;
-$$
-LANGUAGE 'plpgsql';
-
-CREATE TRIGGER TR_ORDEN_VALIDA BEFORE INSERT OR UPDATE OF valor ON g9_orden
-    FOR EACH ROW EXECUTE FUNCTION FN_ORDEN_VALIDA();
-
-
-
---PUNTO B)3)
-
-select *
-    from g9_movimiento;
-
-delete from g9_movimiento where id_usuario=1;
-
-insert into g9_movimiento(id_usuario, moneda, fecha, tipo, comision, valor, bloque, direccion) VALUES
-            (1, 'BTC', current_date, 1, 0.1, 10, 312, 232);
-
-CREATE OR REPLACE FUNCTION FN_RETIRO_VALIDO() RETURNS trigger AS $$
-    BEGIN
-        IF EXISTS (SELECT 1
-            from g9_movimiento mov
-            INNER JOIN g9_billetera b on (new.id_usuario = b.id_usuario) and (b.moneda = new.moneda)
-            where ((new.valor + new.comision > b.saldo - (SELECT sum(o.valor)
-                                                          from g9_orden o
-                                                          INNER JOIN g9_mercado m on (m.nombre = o.mercado)
-                                                          where m.moneda_o = new.moneda)))) then
-            RAISE EXCEPTION 'No se permite retirar debido a que el saldo esta comprometido con otras transacciones';
-        END IF;
-    RETURN NEW;
-    end $$
-LANGUAGE 'plpgsql';
-
-CREATE TRIGGER TR_RETIRO_VALIDO BEFORE INSERT OR UPDATE OF valor
-    ON g9_movimiento FOR EACH ROW EXECUTE FUNCTION FN_RETIRO_VALIDO();
+--------------------------------------------FIN ARCHIVO DEL PUNTO A---------------------------------
