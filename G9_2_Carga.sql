@@ -1,10 +1,19 @@
 
---------------- TPE : Carga grupo 9 ------------------
-
+--------------- INICIO Carga grupo 9 ------------------
 
 ----------------------Extras---------------------------
 --Para que el date tome el aspecto de 'dd/mm/aaaa'
 set datestyle to 'European';
+--Funcion para generar una fecha aleatoria
+create function fn_fecha_aleatoria(desde timestamp without time zone, hasta timestamp without time zone) returns timestamp without time zone
+    language plpgsql
+as
+$$
+begin
+
+    return desde+ random()* (hasta - desde);
+end
+$$;
 
 ------------------------PAIS-------------------------
 --Ingreso del pais 100, nombre ARGENTINA
@@ -79,7 +88,7 @@ insert into g9_moneda(moneda, nombre, descripcion, alta, estado, fiat) VALUES
                          'basis.', '21/10/2020', 1 , 0);
 
 insert into g9_moneda(moneda, nombre, descripcion, alta, estado, fiat) VALUES
-    ('Dai', 'DAI', 'Dai price today is $1.05 USD with a 24-hour trading volume of $119,134,185 USD.' , '21/10/2020', 1 , 0);
+    ('DAI', 'DAI', 'Dai price today is $1.05 USD with a 24-hour trading volume of $119,134,185 USD.' , '21/10/2020', 1 , 0);
 
 insert into g9_moneda(moneda, nombre, descripcion, alta, estado, fiat) VALUES
     ('BUSD', 'Binance USD', 'Binance USD price today is $1.00 USD with a 24-hour trading volume of $640,919,409 USD.' ,
@@ -132,8 +141,6 @@ insert into g9_moneda (moneda, nombre, descripcion, alta, estado, fiat) VALUES
     ('LTC', 'Litecoin', 'Criptomoneda', '12/12/2020', 1, 0);
 
 --------------------------RelMoneda-----------------------------
-select *
-from g9_relmoneda;
 
 insert into g9_relmoneda (moneda, monedaf, fecha, valor) VALUES
 ('USDT', 'USD', '21/10/2020', '1');
@@ -162,7 +169,7 @@ as $$
         i integer;
     begin
         i:=0;
-        for moneda_1 in (select moneda from g9_moneda m where(NOT EXISTS(select 1 from g9_relmoneda r where (m.moneda=r.moneda)))) loop
+        for moneda_1 in (select moneda from g9_moneda m where(NOT EXISTS(select 1 from g9_relmoneda r where (m.moneda=r.moneda)) and m.moneda<>'BTC')) loop
                 for moneda_2 in (select moneda from g9_moneda m where(EXISTS(select 1 from g9_relmoneda r where (m.moneda=r.moneda)))) loop
                         insert into g9_mercado(nombre, moneda_o, moneda_d, precio_mercado)  values
                                                 ('Mercado_'||moneda_1||'_'||moneda_2, moneda_1, moneda_2, random()*100+random());
@@ -173,6 +180,7 @@ as $$
 $$ language plpgsql;
 
 call pr_g9_CargarMercadoMonedaContraEstables();
+
 
 -------------------------------------------------------------------------
 ----------------mercado de cada criptomoneda contra el BTC---------------
@@ -193,8 +201,8 @@ as $$
 $$ language plpgsql;
 
 call pr_g9_CargarMercadoMonedaContraBTC();
-----------------------------------------------------------------
 
+----------------------------------------------------------------
 --------------------Inicializar las órdenes con al menos 100 filas--------------------
 create or replace procedure pr_g9_cargarBilletera(id_usuario_param int, valor int, moneda_param varchar) as
 $$
@@ -203,6 +211,8 @@ $$
              update g9_billetera b set saldo=saldo+valor where (b.id_usuario=id_usuario_param and b.moneda=moneda_param);
         else
             insert into g9_billetera (id_usuario, moneda, saldo) values (id_usuario_param, moneda_param, valor);
+            insert into g9_movimiento(id_usuario, moneda, fecha, tipo, comision, valor, bloque, direccion) values
+            (id_usuario_param, moneda_param, fn_fecha_aleatoria( '01/01/2020', '12/11/2020'),'e', 0.01, valor, null, null);
         end if;
     end;
 $$
@@ -242,7 +252,7 @@ $$
                 valor = random()*1000+random();
 
                 insert into g9_orden (id, mercado, id_usuario, tipo, fecha_creacion, fecha_ejec, valor, cantidad, estado)
-                        VALUES (i, mercado1, id_usuario , tipoS, current_date, current_date, valor , floor(random()*10), 'Cumplida');
+                        VALUES (i, mercado1, id_usuario , tipoS, current_date, current_date, valor , floor((random()*10)+1), 'Pendiente');
                 --Llamo a cargar las billetas asi me queda consistentes las billeteras con las ordes
                 call pr_g9_cargarBilletera(id_usuario,valor, moneda);
 
